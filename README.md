@@ -1,7 +1,3 @@
-Here’s a professional, concise README file tailored for your `system-metrics-monitor` GitHub repository. It showcases the project, explains its features, and provides setup and deployment instructions to maximize its appeal and usability.
-
----
-
 # System Metrics Monitor
 
 A robust, full-stack application designed to monitor system performance metrics in real-time, featuring a Node.js/Express backend and a Next.js frontend. This project provides actionable insights into CPU and memory usage, with both manual and automated data refresh capabilities.
