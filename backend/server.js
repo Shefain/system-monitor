@@ -23,14 +23,13 @@ async function collectSystemMetrics() {
                     usage: parseFloat(lines[2].match(/%Cpu\(s\):[\s]*([\d.]+)/)?.[1] || 0),
                 },
                 memory: {
-                    total: parseInt(lines[3].match(/Mem\s*:\s*([\d]+)/)?.[1] || 0) / 1024, // Convert kB to MB
-                    used: parseInt(lines[3].match(/used,\s*([\d]+)/)?.[1] || 0) / 1024,   // Convert kB to MB
-                    free: parseInt(lines[3].match(/free,\s*([\d]+)/)?.[1] || 0) / 1024,   // Convert kB to MB
+                    total: Math.round(parseInt(lines[3].match(/Mem\s*:\s*([\d]+)/)?.[1] || 0) / 1024), // kB to MB, full number
+                    used: Math.round(parseInt(lines[3].match(/used,\s*([\d]+)/)?.[1] || 0) / 1024),   // kB to MB, full number
+                    free: Math.round(parseInt(lines[3].match(/free,\s*([\d]+)/)?.[1] || 0) / 1024),   // kB to MB, full number
                     percentUsed: 0,
                 },
             };
 
-            // Calculate memory usage percentage (unchanged, based on raw values)
             if (metrics.memory.total > 0) {
                 metrics.memory.percentUsed = ((metrics.memory.used / metrics.memory.total) * 100).toFixed(2);
             }
