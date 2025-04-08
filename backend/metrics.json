@@ -1,12 +1,12 @@
 {
-  "timestamp": "2025-04-08T22:30:47.779Z",
+  "timestamp": "2025-04-08T22:57:13.152Z",
   "cpu": {
-    "usage": 4.7
+    "usage": 7.5
   },
   "memory": {
-    "total": 8,
-    "used": 2,
-    "free": 5,
-    "percentUsed": "25.00"
+    "total": 0,
+    "used": 0,
+    "free": 0,
+    "percentUsed": 0
   }
 }
