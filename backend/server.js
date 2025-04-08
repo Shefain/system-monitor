@@ -20,14 +20,15 @@ async function collectSystemMetrics() {
 
             const lines = stdout.split('\n');
 
-            // Parse CPU metrics
+            // ===== CPU PARSING =====
             const cpuLine = lines.find(line => line.includes('%Cpu(s):'));
             if (!cpuLine) {
                 reject(new Error('CPU line not found'));
                 return;
             }
 
-            const idleMatch = cpuLine.match(/(\d+\.?\d*)\s+id/);
+            // Extract idle percentage (more robust regex)
+            const idleMatch = cpuLine.match(/(\d+\.?\d*)\s*id(?:le)?\,?/i);
             if (!idleMatch) {
                 reject(new Error('Idle CPU percentage not found'));
                 return;
@@ -35,55 +36,59 @@ async function collectSystemMetrics() {
             const idle = parseFloat(idleMatch[1]);
             const cpuUsage = (100 - idle).toFixed(2);
 
-            // Parse Memory metrics
-            const memLine = lines.find(line => line.includes('Mem'));
+            // ===== MEMORY PARSING =====
+            const memLine = lines.find(line => line.includes('Mem:') || line.includes('Mem '));
             if (!memLine) {
                 reject(new Error('Memory line not found'));
                 return;
             }
 
-            const unitMatch = memLine.match(/(KiB|MiB|GiB)\s+Mem/);
-            const unit = unitMatch ? unitMatch[1] : 'KiB';
+            // NEW: Universal memory parsing
+            const memData = memLine.replace(/,/g, '').split(/\s+/).filter(Boolean);
+            
+            // Find indices of keywords
+            const totalIndex = memData.findIndex(v => v === 'total');
+            const usedIndex = memData.findIndex(v => v === 'used');
+            const freeIndex = memData.findIndex(v => v === 'free');
 
-            const parts = memLine.split(',').map(part => part.trim());
-            let total, used, free;
-
-            parts.forEach(part => {
-                if (part.includes('total')) {
-                    const match = part.match(/(\d+\.?\d*)\s+total/);
-                    if (match) total = parseFloat(match[1]);
-                } else if (part.includes('used')) {
-                    const match = part.match(/(\d+\.?\d*)\s+used/);
-                    if (match) used = parseFloat(match[1]);
-                } else if (part.includes('free')) {
-                    const match = part.match(/(\d+\.?\d*)\s+free/);
-                    if (match) free = parseFloat(match[1]);
-                }
-            });
-
-            if (typeof total === 'undefined' || typeof used === 'undefined' || typeof free === 'undefined') {
-                reject(new Error('Could not parse memory values'));
+            if (totalIndex === -1 || usedIndex === -1 || freeIndex === -1) {
+                reject(new Error('Memory metrics not found in expected format'));
                 return;
             }
 
-            // Convert to MiB based on detected unit
+            // Extract values (position -1 because value comes before label)
+            const total = parseFloat(memData[totalIndex - 1]);
+            const used = parseFloat(memData[usedIndex - 1]);
+            const free = parseFloat(memData[freeIndex - 1]);
+
+            if (isNaN(total) || isNaN(used) || isNaN(free)) {
+                reject(new Error('Failed to parse memory values'));
+                return;
+            }
+
+            // Detect unit (KiB/MiB/GiB)
+            let unit = 'KiB'; // default
+            if (memLine.includes('MiB')) unit = 'MiB';
+            else if (memLine.includes('GiB')) unit = 'GiB';
+
+            // Convert to MiB
+            let totalMiB, usedMiB, freeMiB;
             switch (unit) {
                 case 'KiB':
-                    total /= 1024;
-                    used /= 1024;
-                    free /= 1024;
+                    totalMiB = total / 1024;
+                    usedMiB = used / 1024;
+                    freeMiB = free / 1024;
                     break;
                 case 'MiB':
-                    // Already in MiB, no conversion needed
+                    totalMiB = total;
+                    usedMiB = used;
+                    freeMiB = free;
                     break;
                 case 'GiB':
-                    total *= 1024;
-                    used *= 1024;
-                    free *= 1024;
+                    totalMiB = total * 1024;
+                    usedMiB = used * 1024;
+                    freeMiB = free * 1024;
                     break;
-                default:
-                    reject(new Error(`Unsupported memory unit: ${unit}`));
-                    return;
             }
 
             const metrics = {
@@ -92,14 +97,14 @@ async function collectSystemMetrics() {
                     usage: parseFloat(cpuUsage),
                 },
                 memory: {
-                    total: Math.round(total),
-                    used: Math.round(used),
-                    free: Math.round(free),
-                    percentUsed: ((used / total) * 100).toFixed(2),
+                    total: Math.round(totalMiB),
+                    used: Math.round(usedMiB),
+                    free: Math.round(freeMiB),
+                    percentUsed: ((usedMiB / totalMiB) * 100).toFixed(2),
+                    unit: 'MiB' // Standardized output unit
                 },
             };
 
-            // Write metrics to file and resolve
             fs.writeFile('metrics.json', JSON.stringify(metrics, null, 2))
                 .then(() => resolve(metrics))
                 .catch(reject);
@@ -107,23 +112,34 @@ async function collectSystemMetrics() {
     });
 }
 
+// ===== ROUTES =====
 app.get('/metrics', async (req, res) => {
     try {
         const metrics = await collectSystemMetrics();
         res.status(200).json({ status: 'success', data: metrics });
     } catch (error) {
-        res.status(500).json({ status: 'error', message: error.message });
+        res.status(500).json({ 
+            status: 'error', 
+            message: error.message,
+            suggestion: 'Ensure Linux system has top command available'
+        });
     }
 });
 
 app.get('/health', (req, res) => {
-    res.status(200).json({ status: 'operational', uptime: process.uptime() });
+    res.status(200).json({ 
+        status: 'operational', 
+        uptime: process.uptime(),
+        timestamp: new Date().toISOString() 
+    });
 });
 
 app.listen(PORT, () => {
-    console.log(`Backend server operational on port ${PORT}`);
+    console.log(`Server running on port ${PORT}`);
+    console.log(`Try accessing: http://localhost:${PORT}/metrics`);
 });
 
 process.on('uncaughtException', (error) => {
-    console.error('Uncaught Exception:', error);
+    console.error('⚠️ Uncaught Exception:', error);
+    process.exit(1);
 });
