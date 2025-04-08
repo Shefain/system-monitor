@@ -19,45 +19,90 @@ async function collectSystemMetrics() {
             console.log('Raw top output:', stdout); // Debug
 
             const lines = stdout.split('\n');
-            let memLine = lines.find(line => line.includes('Mem'));
+
+            // Parse CPU metrics
+            const cpuLine = lines.find(line => line.includes('%Cpu(s):'));
+            if (!cpuLine) {
+                reject(new Error('CPU line not found'));
+                return;
+            }
+
+            const idleMatch = cpuLine.match(/(\d+\.?\d*)\s+id/);
+            if (!idleMatch) {
+                reject(new Error('Idle CPU percentage not found'));
+                return;
+            }
+            const idle = parseFloat(idleMatch[1]);
+            const cpuUsage = (100 - idle).toFixed(2);
+
+            // Parse Memory metrics
+            const memLine = lines.find(line => line.includes('Mem'));
             if (!memLine) {
                 reject(new Error('Memory line not found'));
                 return;
             }
 
+            const unitMatch = memLine.match(/(KiB|MiB|GiB)\s+Mem/);
+            const unit = unitMatch ? unitMatch[1] : 'KiB';
+
+            const parts = memLine.split(',').map(part => part.trim());
+            let total, used, free;
+
+            parts.forEach(part => {
+                if (part.includes('total')) {
+                    const match = part.match(/(\d+\.?\d*)\s+total/);
+                    if (match) total = parseFloat(match[1]);
+                } else if (part.includes('used')) {
+                    const match = part.match(/(\d+\.?\d*)\s+used/);
+                    if (match) used = parseFloat(match[1]);
+                } else if (part.includes('free')) {
+                    const match = part.match(/(\d+\.?\d*)\s+free/);
+                    if (match) free = parseFloat(match[1]);
+                }
+            });
+
+            if (typeof total === 'undefined' || typeof used === 'undefined' || typeof free === 'undefined') {
+                reject(new Error('Could not parse memory values'));
+                return;
+            }
+
+            // Convert to MiB based on detected unit
+            switch (unit) {
+                case 'KiB':
+                    total /= 1024;
+                    used /= 1024;
+                    free /= 1024;
+                    break;
+                case 'MiB':
+                    // Already in MiB, no conversion needed
+                    break;
+                case 'GiB':
+                    total *= 1024;
+                    used *= 1024;
+                    free *= 1024;
+                    break;
+                default:
+                    reject(new Error(`Unsupported memory unit: ${unit}`));
+                    return;
+            }
+
             const metrics = {
                 timestamp: new Date().toISOString(),
                 cpu: {
-                    usage: parseFloat(lines[2].match(/%Cpu\(s\):[\s]*([\d.]+)/)?.[1] || 0),
+                    usage: parseFloat(cpuUsage),
                 },
                 memory: {
-                    total: 0,
-                    used: 0,
-                    free: 0,
-                    percentUsed: 0,
+                    total: Math.round(total),
+                    used: Math.round(used),
+                    free: Math.round(free),
+                    percentUsed: ((used / total) * 100).toFixed(2),
                 },
             };
 
-            const totalMatch = memLine.match(/Mem\s*:\s*([\d]+)(?:k)?\s+total/);
-            const usedMatch = memLine.match(/used,\s*([\d]+)(?:k)?\s+/);
-            const freeMatch = memLine.match(/free,\s*([\d]+)(?:k)?\s*/);
-
-            if (totalMatch && usedMatch && freeMatch) {
-                metrics.memory.total = Math.round(parseInt(totalMatch[1]) / 1024);
-                metrics.memory.used = Math.round(parseInt(usedMatch[1]) / 1024);
-                metrics.memory.free = Math.round(parseInt(freeMatch[1]) / 1024);
-            }
-
-            if (metrics.memory.total > 0) {
-                metrics.memory.percentUsed = ((metrics.memory.used / metrics.memory.total) * 100).toFixed(2);
-            }
-
-            try {
-                fs.writeFile('metrics.json', JSON.stringify(metrics, null, 2));
-                resolve(metrics);
-            } catch (writeError) {
-                reject(writeError);
-            }
+            // Write metrics to file and resolve
+            fs.writeFile('metrics.json', JSON.stringify(metrics, null, 2))
+                .then(() => resolve(metrics))
+                .catch(reject);
         });
     });
 }
