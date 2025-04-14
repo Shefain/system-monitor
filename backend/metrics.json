@@ -1,13 +1,13 @@
 {
-  "timestamp": "2025-04-08T23:38:43.762Z",
+  "timestamp": "2025-04-08T23:55:44.164Z",
   "cpu": {
-    "usage": 0.8
+    "usage": 2
   },
   "memory": {
     "total": 7804,
-    "used": 6097,
-    "free": 667,
-    "percentUsed": "78.13",
+    "used": 5780,
+    "free": 707,
+    "percentUsed": "74.06",
     "unit": "MiB"
   }
 }
